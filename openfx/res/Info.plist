@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>io.github.ijigen.fpsup.gyroflow.ofx</string>
+    <string>io.github.ijigen.fpsup2060v4.gyroflow.ofx</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>fpSupGyroflow.ofx</string>
+	<string>fpSup2060v4.ofx</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>

@@ -8,7 +8,7 @@ use gyroflow_plugin_base::parking_lot::{ Mutex, RwLock };
 use gyroflow_plugin_base::lru::LruCache;
 
 plugin_module!(
-    "io.github.ijigen.fpsup.gyroflow",
+    "io.github.ijigen.fpsup2060v4.gyroflow",
     ApiVersion(1),
     PluginVersion(1, 8),
     GyroflowPlugin::default
@@ -76,6 +76,7 @@ define_params!(ParamHandler {
     i32s: [
         Interpolation         => interpolation:            ParamHandle<Int>,
         IntegrationMethod     => integration_method:       ParamHandle<Int>,
+        ZoomMethod            => zoom_method:              ParamHandle<Int>,
     ],
 
     get_string:  _s p    { Ok(p.get_value()?) },
@@ -473,6 +474,7 @@ impl Execute for GyroflowPlugin {
                         output_size_fit:          param_set.parameter("OutputSizeToTimeline")?,
                         interpolation:            param_set.parameter("Interpolation")?,
                         integration_method:       param_set.parameter("IntegrationMethod")?,
+                        zoom_method:              param_set.parameter("ZoomMethod")?,
 
                         loaded_project:           param_set.parameter("LoadedProject")?,
                         loaded_lens:              param_set.parameter("LoadedLens")?,
@@ -568,6 +570,19 @@ impl Execute for GyroflowPlugin {
                 out_args.set_effect_region_of_definition(out_rod)?;
 
                 OK
+            }
+
+            // fpSup 2060: thumbnails and other tiny renders are passed through untouched
+            // (no stabilization), so Resolve never runs Gyroflow for them.
+            IsIdentity(ref mut _effect, ref in_args, ref mut out_args) => {
+                if let Ok(w) = in_args.get_render_window() {
+                    if (w.x2 - w.x1) < 400 || (w.y2 - w.y1) < 225 {
+                        out_args.set_name("Source")?;
+                        out_args.set_time(in_args.get_time()?)?;
+                        return OK;
+                    }
+                }
+                REPLY_DEFAULT
             }
 
             DestroyInstance(ref mut effect) => {
@@ -696,19 +711,19 @@ impl Execute for GyroflowPlugin {
                 log::info!("Host supports OpenCL: {:?}", supports_opencl);
                 log::info!("Host supports CUDA: {:?}", supports_cuda);
                 log::info!("Host supports Metal: {:?}", supports_metal);
-                if !supports_opencl && !supports_opengl {
-                    unsafe { std::env::set_var("NO_OPENCL", "1") };
-                }
+                // fpSup 2060: never load OpenCL drivers (Intel/NVIDIA ICDs); CUDA + Vulkan only.
+                let _ = supports_opencl;
+                unsafe { std::env::set_var("NO_OPENCL", "1") };
                 if _plugin_context.get_host().get_name().as_deref().ok() == Some("com.vegascreativesoftware.vegas") {
                     unsafe { std::env::set_var("NO_OPENCL", "1") };
                 }
 
                 let mut effect_properties: EffectDescriptor = effect.properties()?;
-                effect_properties.set_grouping("fpSup")?;
+                effect_properties.set_grouping("fpSup 2060 v4")?;
 
-                effect_properties.set_label("Gyroflow (fpSup)")?;
-                effect_properties.set_short_label("Gyroflow (fpSup)")?;
-                effect_properties.set_long_label("Gyroflow (fpSup)")?;
+                effect_properties.set_label("Gyroflow (fpSup 2060 v4)")?;
+                effect_properties.set_short_label("Gyroflow (fpSup 2060 v4)")?;
+                effect_properties.set_long_label("Gyroflow (fpSup 2060 v4)")?;
 
                 effect_properties.set_supported_pixel_depths(&[BitDepth::Byte, BitDepth::Short, BitDepth::Float])?;
                 effect_properties.set_supported_contexts(&[ImageEffectContext::Filter])?;
@@ -716,7 +731,7 @@ impl Execute for GyroflowPlugin {
 
                 effect_properties.set_single_instance(false)?;
                 effect_properties.set_host_frame_threading(false)?;
-                effect_properties.set_render_thread_safety(ImageEffectRender::FullySafe)?;
+                effect_properties.set_render_thread_safety(ImageEffectRender::InstanceSafe)?;
                 effect_properties.set_supports_multi_resolution(true)?;
                 effect_properties.set_temporal_clip_access(true)?;
 
@@ -726,7 +741,7 @@ impl Execute for GyroflowPlugin {
                     return OK;
                 }
 
-                let opencl_devices = gyroflow_plugin_base::opencl::OclWrapper::list_devices();
+                let opencl_devices: Vec<String> = Vec::new(); // fpSup 2060: OpenCL not used
                 let wgpu_devices = std::thread::spawn(|| gyroflow_plugin_base::wgpu::WgpuWrapper::list_devices()).join().unwrap();
                 if !opencl_devices.is_empty() {
                     let _ = effect_properties.set_opencl_render_supported("true");
