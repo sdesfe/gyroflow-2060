@@ -1,0 +1,110 @@
+// 3K Pattern Remove v1
+// For SIGMA fp 3K CinemaDNG, works on other footage with aliasing/moire too.
+//  LUMA aliasing: fine textures (brick, mesh, tiles) fold into false 2-5 px stripes that shimmer.
+//  COLOUR moire: false colour bands and artifacts along brick courses, visible once saturation is pushed.
+// Luma stage: band removal inside an auto mask that skips strong edges.
+// Colour stage: wide edge-aware chroma smoothing. Neighbours are weighted by luma similarity
+// RELATIVE to local brightness, so brick mortar contrast is crossed but window frames are not.
+// Put this node FIRST, before any saturation or grade. Use Show Mask to see where it acts.
+
+DEFINE_UI_PARAMS(lumaAmt, Luma Alias Removal, DCTLUI_SLIDER_FLOAT, 0.86, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(chromaAmt, Colour Moire Removal, DCTLUI_SLIDER_FLOAT, 0.279, 0.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(chromaRad, Colour Radius, DCTLUI_SLIDER_INT, 6, 1, 12, 1)
+DEFINE_UI_PARAMS(chromaTol, Colour Edge Tolerance, DCTLUI_SLIDER_FLOAT, 0.529, 0.05, 1.0, 0.001)
+DEFINE_UI_PARAMS(chromaEverywhere, Colour On Whole Frame, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(texThr, Texture Threshold, DCTLUI_SLIDER_FLOAT, 0.025, 0.0, 0.2, 0.001)
+DEFINE_UI_PARAMS(texSoft, Texture Softness, DCTLUI_SLIDER_FLOAT, 0.043, 0.001, 0.2, 0.001)
+DEFINE_UI_PARAMS(edgeLim, Edge Protect Limit, DCTLUI_SLIDER_FLOAT, 0.014, 0.01, 0.5, 0.001)
+DEFINE_UI_PARAMS(useMask, Use Auto Mask, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(showMask, Show Mask, DCTLUI_CHECK_BOX, 0)
+
+__DEVICE__ int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+__DEVICE__ float sstep(float e0, float e1, float x)
+{
+    float t = (x - e0) / (e1 - e0);
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float lumaAt(__TEXTURE__ R, __TEXTURE__ G, __TEXTURE__ B, int x, int y)
+{
+    return 0.2126f * _tex2D(R, x, y) + 0.7152f * _tex2D(G, x, y) + 0.0722f * _tex2D(B, x, y);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float r0 = _tex2D(p_TexR, p_X, p_Y);
+    float g0 = _tex2D(p_TexG, p_X, p_Y);
+    float b0 = _tex2D(p_TexB, p_X, p_Y);
+    float Y0  = 0.2126f * r0 + 0.7152f * g0 + 0.0722f * b0;
+    float Cb0 = (b0 - Y0) / 1.8556f;
+    float Cr0 = (r0 - Y0) / 1.5748f;
+
+    // ---------- luma stage + mask (radius 4) ----------
+    const int RAD = 4;
+    float wS = 0.0f, sBase = 0.0f, sD2 = 0.0f;
+    float w06 = 0.0f, s06 = 0.0f, w10 = 0.0f, s10 = 0.0f;
+    float w18 = 0.0f, s18 = 0.0f, w25 = 0.0f, s25 = 0.0f;
+
+    for (int dy = -RAD; dy <= RAD; dy++) {
+        for (int dx = -RAD; dx <= RAD; dx++) {
+            int x  = clampi(p_X + dx, 0, p_Width - 1);
+            int y  = clampi(p_Y + dy, 0, p_Height - 1);
+            int x1 = clampi(x + 1, 0, p_Width - 1);
+            int y1 = clampi(y + 1, 0, p_Height - 1);
+            float Yi = lumaAt(p_TexR, p_TexG, p_TexB, x, y);
+            float gx = lumaAt(p_TexR, p_TexG, p_TexB, x1, y) - Yi;
+            float gy = lumaAt(p_TexR, p_TexG, p_TexB, x, y1) - Yi;
+            float d2 = (float)(dx * dx + dy * dy);
+            float k;
+            k = _expf(-d2 / (2.0f * 2.2f * 2.2f)); wS += k; sBase += k * Yi; sD2 += k * (gx * gx + gy * gy);
+            k = _expf(-d2 / (2.0f * 0.6f * 0.6f)); w06 += k; s06 += k * Yi;
+            k = _expf(-d2 / (2.0f * 1.0f * 1.0f)); w10 += k; s10 += k * Yi;
+            k = _expf(-d2 / (2.0f * 1.8f * 1.8f)); w18 += k; s18 += k * Yi;
+            k = _expf(-d2 / (2.0f * 2.5f * 2.5f)); w25 += k; s25 += k * Yi;
+        }
+    }
+
+    float base = sBase / wS + 0.02f;
+    float rel  = _sqrtf(sD2 / wS) / base;
+    float stp  = _fabs(s10 / w10 - s25 / w25) / base;
+
+    float mask = 1.0f;
+    if (useMask) mask = sstep(texThr, texThr + texSoft, rel) * (1.0f - sstep(edgeLim, edgeLim * 2.0f, stp));
+    if (showMask) return make_float3(mask, mask, mask);
+
+    float band = s06 / w06 - s18 / w18;
+    float Y = Y0 - lumaAmt * mask * band;
+
+    // ---------- colour stage: wide, edge-aware relative to brightness ----------
+    float sig  = (float)chromaRad * 0.5f + 0.5f;
+    float isg  = 1.0f / (2.0f * sig * sig);
+    float itol = 1.0f / (2.0f * chromaTol * chromaTol);
+    float wC = 0.0f, sCb = 0.0f, sCr = 0.0f;
+
+    for (int dy = -chromaRad; dy <= chromaRad; dy++) {
+        for (int dx = -chromaRad; dx <= chromaRad; dx++) {
+            int x = clampi(p_X + dx, 0, p_Width - 1);
+            int y = clampi(p_Y + dy, 0, p_Height - 1);
+            float r = _tex2D(p_TexR, x, y);
+            float g = _tex2D(p_TexG, x, y);
+            float b = _tex2D(p_TexB, x, y);
+            float Yi = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+            float dr = (Yi - Y0) / base;
+            float w  = _expf(-(float)(dx * dx + dy * dy) * isg - dr * dr * itol);
+            sCb += w * (b - Yi) / 1.8556f;
+            sCr += w * (r - Yi) / 1.5748f;
+            wC  += w;
+        }
+    }
+
+    float cm = chromaEverywhere ? 1.0f : _fmaxf(mask, sstep(texThr * 0.5f, texThr, rel));
+    float Cb = _mix(Cb0, sCb / wC, chromaAmt * cm);
+    float Cr = _mix(Cr0, sCr / wC, chromaAmt * cm);
+
+    float R = Y + 1.5748f * Cr;
+    float B = Y + 1.8556f * Cb;
+    float G = (Y - 0.2126f * R - 0.0722f * B) / 0.7152f;
+    return make_float3(R, G, B);
+}

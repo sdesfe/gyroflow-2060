@@ -1,0 +1,6 @@
+3k-pattern-remove/**/*.bat text eol=crlf
+3k-pattern-remove/**/*.command text eol=lf
+3k-pattern-remove/**/*.dctl text eol=lf
+*.zip binary
+*.mp4 binary
+*.mov binary
