@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
 name: fpSup 2060 Windows build
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: fpSup 2060 plugin for Windows
@@ -34,3 +37,15 @@ jobs:
         with:
           name: fpSup2060v4-OpenFX-windows
           path: target/fpSup2060v4-OpenFX-windows.zip
+      - name: Save the plugin zip to the builds branch
+        shell: bash
+        run: |
+          mkdir -p /tmp/out && cp target/fpSup2060v4-OpenFX-windows.zip /tmp/out/
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git fetch origin builds || true
+          if git rev-parse --verify origin/builds >/dev/null 2>&1; then git checkout -B builds origin/builds; else git checkout --orphan builds; git rm -rf . >/dev/null; fi
+          cp /tmp/out/fpSup2060v4-OpenFX-windows.zip .
+          git add fpSup2060v4-OpenFX-windows.zip
+          git commit -m "fpSup 2060 v4 build ${GITHUB_SHA::7}"
+          git push origin builds
