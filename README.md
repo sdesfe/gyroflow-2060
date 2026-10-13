@@ -121,4 +121,4 @@ To set it, search "environment variables" in Start, choose "Edit environment var
 
 ---
 
-*Disclaimer: made with the assistance of Claude (Anthropic) for the text and design.*
+*Disclaimer: made with the assistance of Claude for the text and code.*
