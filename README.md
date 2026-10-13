@@ -1,6 +1,6 @@
 # 3K Pattern Remove
 
-A DCTL for DaVinci Resolve that reduces aliasing and colour moire on fine patterns (brick, mesh, tiles, fabric). It was tuned on SIGMA fp 3K CinemaDNG. In that mode fine detail folds into false stripes that shimmer in motion and turn into colour bands and artifacts once saturation is pushed. It also works on other footage with the same kind of false pattern.
+A DCTL for DaVinci Resolve that reduces aliasing and colour moire on fine patterns (brick, mesh, tiles, fabric). It was tuned on SIGMA fp 3K open gate CinemaDNG. In that mode fine detail folds into false stripes that shimmer in motion and turn into colour bands and artifacts once saturation is pushed. It also works on other footage with the same kind of false pattern.
 
 > **Note:** the settings are very specific to my test footage and still need a lot more testing. I'm sharing it in case it's useful to anyone else.
 
